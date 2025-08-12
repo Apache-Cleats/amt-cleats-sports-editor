@@ -1,0 +1,269 @@
+# AMT Cleats Sports Analysis Integration with Olive Video Editor
+# This file modifies Olive's main CMakeLists.txt to include sports analysis features
+# 
+# INSTRUCTIONS FOR INTEGRATION:
+# 1. Add the contents below to Olive's main CMakeLists.txt
+# 2. Place after the existing project() declaration
+# 3. Ensure all AMT sports dependencies are available
+
+# =============================================================================
+# AMT CLEATS SPORTS ANALYSIS INTEGRATION
+# =============================================================================
+
+# AMT Cleats Configuration Options
+option(ENABLE_AMT_SPORTS_ANALYSIS "Enable AMT Cleats Sports Analysis features" ON)
+option(ENABLE_TRIANGLE_DEFENSE "Enable Triangle Defense methodology" ON)
+option(ENABLE_MEL_AI_INTEGRATION "Enable M.E.L. AI empire coordination" ON)
+option(BUILD_AMT_SPORTS_TESTS "Build AMT sports analysis unit tests" OFF)
+
+# AMT Sports Version Information
+set(AMT_SPORTS_VERSION_MAJOR 1)
+set(AMT_SPORTS_VERSION_MINOR 0)
+set(AMT_SPORTS_VERSION_PATCH 0)
+set(AMT_SPORTS_VERSION "${AMT_SPORTS_VERSION_MAJOR}.${AMT_SPORTS_VERSION_MINOR}.${AMT_SPORTS_VERSION_PATCH}")
+
+if(ENABLE_AMT_SPORTS_ANALYSIS)
+    message(STATUS "=== AMT Cleats Sports Analysis Integration ===")
+    message(STATUS "Version: ${AMT_SPORTS_VERSION}")
+    message(STATUS "Triangle Defense: ${ENABLE_TRIANGLE_DEFENSE}")
+    message(STATUS "M.E.L. AI Integration: ${ENABLE_MEL_AI_INTEGRATION}")
+    message(STATUS "Sports Tests: ${BUILD_AMT_SPORTS_TESTS}")
+    message(STATUS "===============================================")
+    
+    # Find AMT Sports Dependencies
+    
+    # OpenCV for Computer Vision (Formation Detection)
+    find_package(OpenCV COMPONENTS
+        core
+        imgproc
+        imgcodecs
+        videoio
+        objdetect
+        dnn
+        QUIET
+    )
+    
+    if(OpenCV_FOUND)
+        message(STATUS "AMT Sports: OpenCV ${OpenCV_VERSION} found - AI formation detection enabled")
+        set(AMT_OPENCV_AVAILABLE ON)
+    else()
+        message(WARNING "AMT Sports: OpenCV not found - using simulation mode for formation detection")
+        set(AMT_OPENCV_AVAILABLE OFF)
+    endif()
+    
+    # Threading Support for Real-time Analysis
+    find_package(Threads REQUIRED)
+    
+    # Add AMT Sports Analysis Module
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app/sports/CMakeLists.txt")
+        add_subdirectory(app/sports)
+        message(STATUS "AMT Sports: Sports analysis module added to build")
+        set(AMT_SPORTS_MODULE_AVAILABLE ON)
+    else()
+        message(FATAL_ERROR "AMT Sports: app/sports/CMakeLists.txt not found - sports module missing")
+    endif()
+    
+    # AMT Sports Compile Definitions
+    add_compile_definitions(
+        ENABLE_AMT_SPORTS_ANALYSIS
+        AMT_SPORTS_VERSION_MAJOR=${AMT_SPORTS_VERSION_MAJOR}
+        AMT_SPORTS_VERSION_MINOR=${AMT_SPORTS_VERSION_MINOR}
+        AMT_SPORTS_VERSION_PATCH=${AMT_SPORTS_VERSION_PATCH}
+    )
+    
+    if(ENABLE_TRIANGLE_DEFENSE)
+        add_compile_definitions(ENABLE_TRIANGLE_DEFENSE)
+        message(STATUS "AMT Sports: Triangle Defense methodology enabled")
+    endif()
+    
+    if(ENABLE_MEL_AI_INTEGRATION)
+        add_compile_definitions(ENABLE_MEL_AI_INTEGRATION)
+        message(STATUS "AMT Sports: M.E.L. AI empire integration enabled")
+    endif()
+    
+    if(AMT_OPENCV_AVAILABLE)
+        add_compile_definitions(ENABLE_OPENCV_INTEGRATION)
+    endif()
+    
+    # AMT Sports Installation Rules
+    if(AMT_SPORTS_MODULE_AVAILABLE)
+        # Install AMT sports headers
+        install(DIRECTORY app/sports/
+            DESTINATION include/olive/sports
+            FILES_MATCHING PATTERN "*.h"
+        )
+        
+        # Create AMT sports configuration file
+        configure_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/app/sports/amt_sports_config.h.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/amt_sports_config.h"
+            @ONLY
+        )
+        
+        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/amt_sports_config.h"
+            DESTINATION include/olive/sports
+        )
+    endif()
+    
+else()
+    message(STATUS "AMT Cleats Sports Analysis: DISABLED")
+    add_compile_definitions(DISABLE_AMT_SPORTS_ANALYSIS)
+endif()
+
+# =============================================================================
+# OLIVE APP MODIFICATION FOR AMT SPORTS INTEGRATION
+# =============================================================================
+
+# This section modifies the existing olive_app target to include AMT sports features
+# Add this AFTER the olive_app target is created in Olive's CMakeLists.txt
+
+if(ENABLE_AMT_SPORTS_ANALYSIS AND TARGET olive_app AND TARGET amt_sports_analysis)
+    
+    # Link AMT Sports Analysis to Olive App
+    target_link_libraries(olive_app
+        PRIVATE
+            amt_sports_analysis
+    )
+    
+    # Add AMT sports include directories to Olive app
+    target_include_directories(olive_app
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/app/sports
+            ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    
+    # Add OpenCV if available
+    if(AMT_OPENCV_AVAILABLE)
+        target_link_libraries(olive_app
+            PRIVATE
+                ${OpenCV_LIBS}
+        )
+        target_include_directories(olive_app
+            PRIVATE
+                ${OpenCV_INCLUDE_DIRS}
+        )
+    endif()
+    
+    message(STATUS "AMT Sports: Successfully integrated with Olive application")
+    
+    # AMT Sports Resources (if any)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/app/sports/resources")
+        # Add sports-specific resources (icons, models, etc.)
+        file(GLOB_RECURSE AMT_SPORTS_RESOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/app/sports/resources/*"
+        )
+        
+        if(AMT_SPORTS_RESOURCES)
+            # Copy sports resources to build directory
+            foreach(RESOURCE ${AMT_SPORTS_RESOURCES})
+                get_filename_component(RESOURCE_NAME ${RESOURCE} NAME)
+                configure_file(${RESOURCE} 
+                    "${CMAKE_CURRENT_BINARY_DIR}/sports_resources/${RESOURCE_NAME}" 
+                    COPYONLY
+                )
+            endforeach()
+            
+            # Install sports resources
+            install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/sports_resources/"
+                DESTINATION share/olive/sports
+            )
+            
+            message(STATUS "AMT Sports: Resources configured and installed")
+        endif()
+    endif()
+    
+else()
+    if(ENABLE_AMT_SPORTS_ANALYSIS)
+        if(NOT TARGET olive_app)
+            message(WARNING "AMT Sports: olive_app target not found - sports integration skipped")
+        endif()
+        if(NOT TARGET amt_sports_analysis)
+            message(WARNING "AMT Sports: amt_sports_analysis target not found - sports integration skipped")
+        endif()
+    endif()
+endif()
+
+# =============================================================================
+# AMT SPORTS TESTING INTEGRATION
+# =============================================================================
+
+if(BUILD_AMT_SPORTS_TESTS AND ENABLE_AMT_SPORTS_ANALYSIS)
+    enable_testing()
+    
+    # AMT Sports Unit Tests
+    add_test(
+        NAME amt_sports_analysis_tests
+        COMMAND sports_tests
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    )
+    
+    # AMT Sports Integration Tests
+    if(TARGET olive_app)
+        add_test(
+            NAME amt_olive_integration_tests
+            COMMAND olive_app --test-sports-integration
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        )
+    endif()
+    
+    message(STATUS "AMT Sports: Testing framework configured")
+endif()
+
+# =============================================================================
+# AMT SPORTS BUILD SUMMARY
+# =============================================================================
+
+if(ENABLE_AMT_SPORTS_ANALYSIS)
+    message(STATUS "")
+    message(STATUS "🏈 AMT CLEATS SPORTS ANALYSIS BUILD SUMMARY 🏈")
+    message(STATUS "================================================")
+    message(STATUS "Sports Analysis: ✅ ENABLED")
+    message(STATUS "Triangle Defense: ${ENABLE_TRIANGLE_DEFENSE}")
+    message(STATUS "M.E.L. AI Integration: ${ENABLE_MEL_AI_INTEGRATION}")
+    message(STATUS "OpenCV Computer Vision: ${AMT_OPENCV_AVAILABLE}")
+    message(STATUS "Sports Module Available: ${AMT_SPORTS_MODULE_AVAILABLE}")
+    message(STATUS "Build Tests: ${BUILD_AMT_SPORTS_TESTS}")
+    message(STATUS "")
+    message(STATUS "AMT Cleats Version: ${AMT_SPORTS_VERSION}")
+    message(STATUS "Integration: Olive Video Editor + Sports AI")
+    message(STATUS "")
+    message(STATUS "🚀 REVOLUTIONARY SPORTS VIDEO EDITOR READY!")
+    message(STATUS "   The world's first AI-powered football analysis platform")
+    message(STATUS "   combining professional video editing with Triangle Defense")
+    message(STATUS "   methodology and M.E.L. AI empire coordination.")
+    message(STATUS "")
+    message(STATUS "🏆 COMPETITIVE ADVANTAGES:")
+    message(STATUS "   ✅ Real-time formation detection")
+    message(STATUS "   ✅ Triangle Defense classification (Larry, Linda, Rita...)")
+    message(STATUS "   ✅ M.E.L. AI coaching recommendations")
+    message(STATUS "   ✅ CLS framework analysis")
+    message(STATUS "   ✅ Professional coaching workflow")
+    message(STATUS "   ✅ AnalyzeMyTeam platform integration")
+    message(STATUS "")
+    message(STATUS "================================================")
+else()
+    message(STATUS "")
+    message(STATUS "AMT Cleats Sports Analysis: DISABLED")
+    message(STATUS "Building standard Olive video editor without sports features")
+    message(STATUS "")
+endif()
+
+# =============================================================================
+# END AMT CLEATS INTEGRATION
+# =============================================================================
+
+# INTEGRATION INSTRUCTIONS:
+# 
+# To integrate AMT Cleats with Olive:
+# 
+# 1. Copy the contents above into Olive's main CMakeLists.txt
+# 2. Place after the project() declaration but before target creation
+# 3. Ensure your app/sports/ directory exists with all sports files
+# 4. Run cmake with: cmake -DENABLE_AMT_SPORTS_ANALYSIS=ON ..
+# 5. Build with: make -j$(nproc) or cmake --build .
+# 
+# Optional build configurations:
+# - cmake -DENABLE_AMT_SPORTS_ANALYSIS=ON -DENABLE_TRIANGLE_DEFENSE=ON ..
+# - cmake -DENABLE_MEL_AI_INTEGRATION=ON -DBUILD_AMT_SPORTS_TESTS=ON ..
+# 
+# The result will be Olive video editor with integrated AMT Cleats sports analysis!

@@ -1,346 +1,532 @@
-#ifndef SPORTS_INTEGRATION_H
-#define SPORTS_INTEGRATION_H
+/***
+  Apache-Cleats Sports Editor
+  Copyright (C) 2024 AnalyzeMyTeam
 
-/**
- * @file sports_integration.h
- * @brief Main integration interface for AMT Cleats Sports Analysis with Olive Video Editor
- * 
- * This file provides the primary integration point between Olive's video editing
- * capabilities and AMT Cleats sports analysis features including Triangle Defense
- * methodology, M.E.L. AI coordination, and coaching workflow tools.
- * 
- * Part of AnalyzeMyTeam (Company 01) - Flagship Football Intelligence Empire
- * Integration with Olive Video Editor for professional sports video analysis.
- */
+  Sports Integration Main Coordinator
+  Central hub for Triangle Defense, M.E.L. pipeline, and video timeline coordination
+***/
+
+#ifndef SPORTSINTEGRATION_H
+#define SPORTSINTEGRATION_H
 
 #include <QObject>
-#include <QWidget>
-#include <QDockWidget>
-#include <QMainWindow>
-#include <QString>
 #include <QTimer>
-#include <QImage>
-#include <memory>
+#include <QMutex>
+#include <QThread>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QJsonArray>
+#include <QDateTime>
+#include <QQueue>
+#include <QMap>
+#include <QStringList>
+#include <QSettings>
+#include <QNetworkAccessManager>
 
-#include "sports_analysis_core.h"
-#include "formation_detector.h"
-#include "coaching_panel.h"
+#include "superset_panel.h"
+#include "kafka_publisher.h"
+#include "triangle_defense_sync.h"
+#include "minio_client.h"
 
-// Forward declarations for Olive integration
-class QMenuBar;
-class QMenu;
-class QAction;
-class QToolBar;
-class QStatusBar;
+namespace olive {
 
-namespace amt {
-namespace sports {
+// Forward declarations
+class VideoTimelineSync;
+class FormationOverlay;
+class CoachingAlertWidget;
+class TimelinePanel;
+class SequenceViewerPanel;
 
 /**
- * @class SportsIntegration
- * @brief Main integration class connecting AMT Cleats sports analysis to Olive
+ * @brief Integration state enumeration
  */
-class SportsIntegration : public QObject {
-    Q_OBJECT
+enum class IntegrationState {
+  Disconnected,
+  Connecting,
+  Connected,
+  Synchronizing,
+  Error,
+  Maintenance
+};
+
+/**
+ * @brief Sports analysis mode
+ */
+enum class AnalysisMode {
+  RealTime,       // Live analysis during playback
+  Batch,          // Analyze entire video offline
+  Manual,         // Manual formation marking
+  Hybrid          // Combination of real-time and manual
+};
+
+/**
+ * @brief Video processing stage
+ */
+enum class ProcessingStage {
+  VideoUpload,
+  MetadataExtraction,
+  FormationDetection,
+  MELProcessing,
+  TriangleAnalysis,
+  FabricatorGeneration,
+  DashboardSync,
+  Complete
+};
+
+/**
+ * @brief System health status
+ */
+struct SystemHealth {
+  bool kafka_connected;
+  bool supabase_connected;
+  bool minio_connected;
+  bool superset_accessible;
+  bool mel_pipeline_active;
+  double cpu_usage;
+  double memory_usage;
+  qint64 disk_space_available;
+  int active_formations;
+  int pending_alerts;
+  QString last_error;
+  QDateTime last_health_check;
+  
+  SystemHealth() : kafka_connected(false), supabase_connected(false),
+                   minio_connected(false), superset_accessible(false),
+                   mel_pipeline_active(false), cpu_usage(0.0), memory_usage(0.0),
+                   disk_space_available(0), active_formations(0), pending_alerts(0),
+                   last_health_check(QDateTime::currentDateTime()) {}
+};
+
+/**
+ * @brief Processing pipeline status
+ */
+struct PipelineStatus {
+  QString video_id;
+  ProcessingStage current_stage;
+  double completion_percentage;
+  QDateTime start_time;
+  QDateTime estimated_completion;
+  QStringList completed_stages;
+  QStringList failed_stages;
+  QString current_operation;
+  QJsonObject stage_metrics;
+  
+  PipelineStatus() : current_stage(ProcessingStage::VideoUpload),
+                     completion_percentage(0.0),
+                     start_time(QDateTime::currentDateTime()) {}
+};
+
+/**
+ * @brief Main sports integration coordinator
+ */
+class SportsIntegration : public QObject
+{
+  Q_OBJECT
 
 public:
-    explicit SportsIntegration(QMainWindow* olive_main_window, QObject* parent = nullptr);
-    ~SportsIntegration();
-    
-    // Initialization and Setup
-    bool initialize();
-    void shutdown();
-    bool isInitialized() const;
-    
-    // Integration with Olive Components
-    void connectToVideoPlayer(QObject* video_player);
-    void connectToTimeline(QObject* timeline);
-    void connectToProject(QObject* project);
-    void connectToSequence(QObject* sequence);
-    
-    // Sports Analysis Core Access
-    SportsAnalysisCore* getSportsCore() const { return m_sports_core.get(); }
-    FormationDetector* getFormationDetector() const { return m_formation_detector.get(); }
-    CoachingPanel* getCoachingPanel() const { return m_coaching_panel; }
-    
-    // UI Integration
-    void addSportsMenus();
-    void addSportsToolbars();
-    void addSportsDockWidgets();
-    void removeSportsUI();
-    
-    // Video Processing Integration
-    void processVideoFrame(const QImage& frame, double timestamp);
-    void onVideoLoaded(const QString& filename);
-    void onVideoPositionChanged(double seconds);
-    void onVideoPlayStateChanged(bool playing);
-    
-    // Timeline Integration
-    void addFormationMarker(double timestamp, FormationType formation);
-    void removeFormationMarker(double timestamp);
-    void exportFormationTimeline(const QString& filename);
-    
-    // Export and Import
-    void exportCoachingClip(double start_time, double end_time, const QString& filename);
-    void exportTacticalDiagram(const QString& filename);
-    void exportCoachingReport(const QString& filename);
-    void importFormationData(const QString& filename);
-    
-    // Configuration
-    void loadSportsSettings();
-    void saveSportsSettings();
-    void resetSportsSettings();
-    
-    // M.E.L. AI Empire Integration
-    void connectToMELAI();
-    void syncWithAnalyzeMyTeam();
-    void sendDataToEmpire(const FormationData& formation);
-    
-    // Performance Monitoring
-    double getAnalysisFPS() const;
-    int getTotalFormationsDetected() const;
-    void resetPerformanceCounters();
+  explicit SportsIntegration(QObject* parent = nullptr);
+  virtual ~SportsIntegration();
+
+  /**
+   * @brief Initialize sports integration system
+   */
+  bool Initialize(const QJsonObject& configuration = QJsonObject());
+
+  /**
+   * @brief Shutdown sports integration gracefully
+   */
+  void Shutdown();
+
+  /**
+   * @brief Connect video editor panels
+   */
+  void ConnectTimelinePanel(TimelinePanel* timeline_panel);
+  void ConnectSequenceViewerPanel(SequenceViewerPanel* viewer_panel);
+
+  /**
+   * @brief Get integration components
+   */
+  SupersetPanel* GetSupersetPanel() const { return superset_panel_; }
+  KafkaPublisher* GetKafkaPublisher() const { return kafka_publisher_; }
+  TriangleDefenseSync* GetTriangleDefenseSync() const { return triangle_defense_sync_; }
+  MinIOClient* GetMinIOClient() const { return minio_client_; }
+  VideoTimelineSync* GetVideoTimelineSync() const { return video_timeline_sync_; }
+  FormationOverlay* GetFormationOverlay() const { return formation_overlay_; }
+  CoachingAlertWidget* GetCoachingAlertWidget() const { return coaching_alert_widget_; }
+
+  /**
+   * @brief Load video for analysis
+   */
+  QString LoadVideoForAnalysis(const QString& video_path, const QJsonObject& metadata = QJsonObject());
+
+  /**
+   * @brief Start real-time analysis
+   */
+  bool StartRealTimeAnalysis(const QString& video_id);
+
+  /**
+   * @brief Stop real-time analysis
+   */
+  void StopRealTimeAnalysis();
+
+  /**
+   * @brief Process video in batch mode
+   */
+  QString ProcessVideoBatch(const QString& video_path, AnalysisMode mode = AnalysisMode::Batch);
+
+  /**
+   * @brief Get current system health
+   */
+  SystemHealth GetSystemHealth() const;
+
+  /**
+   * @brief Get pipeline status for video
+   */
+  PipelineStatus GetPipelineStatus(const QString& video_id) const;
+
+  /**
+   * @brief Get integration state
+   */
+  IntegrationState GetIntegrationState() const { return integration_state_; }
+
+  /**
+   * @brief Get comprehensive statistics
+   */
+  QJsonObject GetIntegrationStatistics() const;
+
+  /**
+   * @brief Force system health check
+   */
+  void PerformHealthCheck();
+
+  /**
+   * @brief Get active video session info
+   */
+  QJsonObject GetActiveVideoSession() const;
+
+  /**
+   * @brief Export analysis results
+   */
+  bool ExportAnalysisResults(const QString& video_id, const QString& export_path,
+                            const QStringList& export_formats = QStringList());
+
+  /**
+   * @brief Import formation data
+   */
+  bool ImportFormationData(const QString& import_path, const QString& video_id);
 
 public slots:
-    // Video Processing Slots
-    void onFrameChanged(const QImage& frame);
-    void onTimelinePositionChanged(double seconds);
-    void onVideoFileLoaded(const QString& filename);
-    
-    // Sports Analysis Slots
-    void onFormationDetected(const FormationData& formation);
-    void onPlayerPositionsUpdated(const std::vector<PlayerPosition>& players);
-    void onCLSAnalysisComplete(const CLSAnalysis& cls);
-    
-    // UI Slots
-    void onSportsAnalysisToggled(bool enabled);
-    void onCoachingPanelRequested();
-    void onFormationReportRequested();
-    void onMELAISyncRequested();
-    void onTriangleDefenseHelpRequested();
+  /**
+   * @brief Handle video playback events
+   */
+  void OnVideoLoaded(const QString& video_path);
+  void OnVideoPlaybackStarted();
+  void OnVideoPlaybackStopped();
+  void OnVideoPositionChanged(qint64 position);
+  void OnVideoSeekPerformed(qint64 position);
+  void OnVideoRateChanged(double rate);
+
+  /**
+   * @brief Handle formation events
+   */
+  void OnFormationDetected(const FormationData& formation);
+  void OnManualFormationMarked(qint64 timestamp, FormationType type);
+  void OnFormationDeleted(const QString& formation_id);
+
+  /**
+   * @brief Handle coaching events
+   */
+  void OnCoachingAlertGenerated(const CoachingAlert& alert);
+  void OnCoachingAlertAcknowledged(const QString& alert_id);
+  void OnTriangleCallMade(TriangleCall call, const FormationData& formation);
+
+  /**
+   * @brief Handle system events
+   */
+  void OnSystemError(const QString& component, const QString& error);
+  void OnComponentStatusChanged(const QString& component, bool connected);
+  void OnConfigurationChanged(const QJsonObject& new_config);
+
+  /**
+   * @brief Handle data synchronization
+   */
+  void OnDataSyncRequired();
+  void OnDataSyncCompleted();
+  void OnDataSyncFailed(const QString& error);
 
 signals:
-    // Sports Analysis Signals
-    void formationDetected(const FormationData& formation);
-    void coachingInsightGenerated(const QString& insight);
-    void melAIConnected(bool connected);
-    void analysisPerformanceUpdated(double fps, int formations_detected);
-    
-    // Integration Signals
-    void timelineMarkerRequested(double timestamp, int marker_type);
-    void exportRequested(const QString& type, const QString& filename);
-    void settingsChanged();
+  /**
+   * @brief Integration status signals
+   */
+  void IntegrationStateChanged(IntegrationState state);
+  void ComponentConnected(const QString& component);
+  void ComponentDisconnected(const QString& component);
+  void SystemHealthUpdated(const SystemHealth& health);
+
+  /**
+   * @brief Video processing signals
+   */
+  void VideoLoadStarted(const QString& video_id);
+  void VideoLoadCompleted(const QString& video_id);
+  void VideoLoadFailed(const QString& video_id, const QString& error);
+  void ProcessingStageChanged(const QString& video_id, ProcessingStage stage);
+  void ProcessingCompleted(const QString& video_id);
+  void ProcessingFailed(const QString& video_id, const QString& error);
+
+  /**
+   * @brief Analysis signals
+   */
+  void RealTimeAnalysisStarted(const QString& video_id);
+  void RealTimeAnalysisStopped(const QString& video_id);
+  void FormationAnalysisCompleted(const QString& video_id, int formation_count);
+  void TriangleDefenseAnalysisCompleted(const QString& video_id, const QJsonObject& results);
+
+  /**
+   * @brief Alert and notification signals
+   */
+  void CriticalAlertGenerated(const CoachingAlert& alert);
+  void SystemWarningIssued(const QString& warning);
+  void PerformanceIssueDetected(const QString& issue);
+
+  /**
+   * @brief Data synchronization signals
+   */
+  void DataSyncStarted();
+  void DataSyncProgress(int percentage);
+  void DataSyncFinished(bool success);
 
 private slots:
-    void updateAnalysisDisplay();
-    void processRealTimeAnalysis();
-    void handleSportsMenuAction();
-    void handleToolbarAction();
+  void OnHealthCheckTimer();
+  void OnStatsUpdateTimer();
+  void OnMaintenanceTimer();
+  void OnVideoUploadCompleted(const VideoMetadata& metadata);
+  void OnFormationProcessingCompleted(const QString& formation_id);
+  void OnMELPipelineCompleted(const QString& formation_id, const MELResult& results);
+  void OnFabricatorResultGenerated(const FabricatorResult& result);
 
 private:
-    void setupSportsComponents();
-    void setupUIIntegration();
-    void setupSignalConnections();
-    void createSportsMenus();
-    void createSportsToolbars();
-    void createSportsDockWidgets();
+  void SetupComponents();
+  void SetupTimers();
+  void LoadConfiguration();
+  void SaveConfiguration();
+  void ConnectComponentSignals();
+  void InitializeAnalysisPipeline();
+  void SetupHealthMonitoring();
+  
+  void UpdateIntegrationState(IntegrationState new_state);
+  void UpdateSystemHealth();
+  void UpdatePipelineStatus(const QString& video_id, ProcessingStage stage, double progress = 0.0);
+  void ProcessVideoStage(const QString& video_id, ProcessingStage stage);
+  void HandleComponentError(const QString& component, const QString& error);
+  void PerformAutomaticMaintenance();
+  
+  bool ValidateSystemRequirements();
+  bool TestComponentConnections();
+  void StartComponentMonitoring();
+  void StopComponentMonitoring();
+  void CleanupResources();
+  void OptimizePerformance();
+
+  // Core components
+  SupersetPanel* superset_panel_;
+  KafkaPublisher* kafka_publisher_;
+  TriangleDefenseSync* triangle_defense_sync_;
+  MinIOClient* minio_client_;
+  VideoTimelineSync* video_timeline_sync_;
+  FormationOverlay* formation_overlay_;
+  CoachingAlertWidget* coaching_alert_widget_;
+  
+  // Video editor panel connections
+  TimelinePanel* timeline_panel_;
+  SequenceViewerPanel* viewer_panel_;
+  
+  // System state
+  IntegrationState integration_state_;
+  AnalysisMode current_analysis_mode_;
+  bool is_initialized_;
+  bool real_time_analysis_active_;
+  QString active_video_id_;
+  qint64 current_video_position_;
+  
+  // Configuration
+  QJsonObject configuration_;
+  QSettings* settings_;
+  QString config_file_path_;
+  
+  // Health monitoring
+  SystemHealth system_health_;
+  QTimer* health_check_timer_;
+  QTimer* stats_update_timer_;
+  QTimer* maintenance_timer_;
+  
+  // Pipeline tracking
+  mutable QMutex pipeline_mutex_;
+  QMap<QString, PipelineStatus> active_pipelines_;
+  QQueue<QString> processing_queue_;
+  int max_concurrent_pipelines_;
+  
+  // Statistics tracking
+  mutable QMutex stats_mutex_;
+  struct IntegrationStats {
+    qint64 videos_processed;
+    qint64 formations_detected;
+    qint64 triangle_calls_made;
+    qint64 coaching_alerts_generated;
+    qint64 uptime_seconds;
+    double average_processing_time;
+    double system_performance_score;
+    QDateTime start_time;
     
-    // Olive Integration Helpers
-    QAction* createSportsAction(const QString& text, const QString& tooltip, 
-                               const QString& icon_path = QString());
-    void integrateSportsTimeline();
-    void setupVideoProcessingPipeline();
-    
-    // Sports Analysis Helpers
-    void initializeSportsAnalysis();
-    void startRealTimeProcessing();
-    void stopRealTimeProcessing();
-    
-    // Empire Integration Helpers
-    void initializeEmpireConnection();
-    void sendFormationToEmpire(const FormationData& formation);
-    void receiveEmpireRecommendations();
-    
-    // Olive Main Window Reference
-    QMainWindow* m_olive_main_window;
-    
-    // Sports Analysis Components
-    std::unique_ptr<SportsAnalysisCore> m_sports_core;
-    std::unique_ptr<FormationDetector> m_formation_detector;
-    CoachingPanel* m_coaching_panel;
-    
-    // UI Integration Components
-    QDockWidget* m_coaching_dock;
-    QMenu* m_sports_menu;
-    QToolBar* m_sports_toolbar;
-    QAction* m_toggle_analysis_action;
-    QAction* m_coaching_panel_action;
-    QAction* m_formation_report_action;
-    QAction* m_mel_ai_sync_action;
-    QAction* m_triangle_defense_help_action;
-    
-    // Video Integration
-    QObject* m_video_player;
-    QObject* m_timeline;
-    QObject* m_project;
-    QObject* m_sequence;
-    
-    // Real-time Processing
-    QTimer* m_analysis_timer;
-    QTimer* m_ui_update_timer;
-    bool m_real_time_analysis_enabled;
-    
-    // Current Analysis State
-    QImage m_current_frame;
-    double m_current_timestamp;
-    FormationData m_current_formation;
-    std::vector<PlayerPosition> m_current_players;
-    
-    // Performance Tracking
-    int m_total_formations_detected;
-    double m_analysis_fps;
-    bool m_mel_ai_connected;
-    
-    // Settings
-    QString m_settings_file_path;
-    bool m_auto_start_analysis;
-    bool m_show_formation_overlays;
-    double m_detection_threshold;
-    
-    // Initialization State
-    bool m_initialized;
+    IntegrationStats() : videos_processed(0), formations_detected(0),
+                         triangle_calls_made(0), coaching_alerts_generated(0),
+                         uptime_seconds(0), average_processing_time(0.0),
+                         system_performance_score(0.0),
+                         start_time(QDateTime::currentDateTime()) {}
+  } stats_;
+  
+  // Error handling and resilience
+  QStringList recent_errors_;
+  QTimer* error_recovery_timer_;
+  int consecutive_failures_;
+  bool automatic_recovery_enabled_;
+  
+  // Performance optimization
+  QThread* background_thread_;
+  bool performance_monitoring_enabled_;
+  QTimer* performance_optimization_timer_;
+  
+  // Networking for external integrations
+  QNetworkAccessManager* network_manager_;
+  
+  // Component status tracking
+  QMap<QString, bool> component_status_;
+  QMap<QString, QDateTime> last_component_check_;
+  
+  // Data synchronization
+  bool data_sync_in_progress_;
+  QTimer* data_sync_timer_;
+  int data_sync_interval_minutes_;
 };
 
 /**
- * @class SportsTimelineIntegration
- * @brief Specialized class for integrating sports markers with Olive's timeline
+ * @brief Configuration helper class
  */
-class SportsTimelineIntegration : public QObject {
-    Q_OBJECT
-
+class SportsIntegrationConfig
+{
 public:
-    explicit SportsTimelineIntegration(QObject* olive_timeline, QObject* parent = nullptr);
-    ~SportsTimelineIntegration();
-    
-    void addFormationMarker(double timestamp, FormationType formation, double confidence);
-    void removeFormationMarker(double timestamp);
-    void clearAllFormationMarkers();
-    
-    void addPlayBoundary(double start_time, double end_time, const QString& play_name);
-    void addCoachingNote(double timestamp, const QString& note);
-    
-    // Export timeline data
-    void exportTimelineData(const QString& filename);
-    void importTimelineData(const QString& filename);
-
-public slots:
-    void onTimelinePositionChanged(double seconds);
-    void onFormationDetected(double timestamp, FormationType formation);
-
-signals:
-    void markerClicked(double timestamp, FormationType formation);
-    void playBoundarySelected(double start_time, double end_time);
-    void coachingNoteRequested(double timestamp);
-
-private:
-    QObject* m_olive_timeline;
-    struct TimelineMarker {
-        double timestamp;
-        FormationType formation;
-        double confidence;
-        QString note;
-    };
-    std::vector<TimelineMarker> m_formation_markers;
-    
-    struct PlayBoundary {
-        double start_time;
-        double end_time;
-        QString play_name;
-        FormationType primary_formation;
-    };
-    std::vector<PlayBoundary> m_play_boundaries;
+  static QJsonObject GetDefaultConfiguration();
+  static bool ValidateConfiguration(const QJsonObject& config);
+  static QJsonObject MergeConfigurations(const QJsonObject& base, const QJsonObject& overlay);
+  static void SaveConfiguration(const QJsonObject& config, const QString& file_path);
+  static QJsonObject LoadConfiguration(const QString& file_path);
+  
+  // Configuration keys
+  static const QString SUPABASE_URL;
+  static const QString SUPABASE_API_KEY;
+  static const QString KAFKA_BOOTSTRAP_SERVERS;
+  static const QString MINIO_ENDPOINT;
+  static const QString MINIO_ACCESS_KEY;
+  static const QString MINIO_SECRET_KEY;
+  static const QString SUPERSET_BASE_URL;
+  static const QString WEBSOCKET_URL;
+  
+  // Feature flags
+  static const QString ENABLE_REAL_TIME_ANALYSIS;
+  static const QString ENABLE_GPU_ACCELERATION;
+  static const QString ENABLE_CLOUD_SYNC;
+  static const QString ENABLE_TELEMETRY;
+  static const QString ENABLE_AUTO_RECOVERY;
+  
+  // Performance settings
+  static const QString MAX_CONCURRENT_PIPELINES;
+  static const QString HEALTH_CHECK_INTERVAL;
+  static const QString DATA_SYNC_INTERVAL;
+  static const QString CACHE_SIZE_LIMIT;
+  static const QString PROCESSING_TIMEOUT;
 };
 
 /**
- * @class SportsExportManager
- * @brief Handles all sports-specific export functionality
+ * @brief System requirements checker
  */
-class SportsExportManager : public QObject {
-    Q_OBJECT
-
+class SystemRequirementsChecker
+{
 public:
-    explicit SportsExportManager(SportsIntegration* integration, QObject* parent = nullptr);
-    ~SportsExportManager();
-    
-    // Coaching Exports
-    bool exportCoachingClip(double start_time, double end_time, const QString& filename);
-    bool exportTacticalDiagram(const FormationData& formation, const QString& filename);
-    bool exportFormationReport(const std::vector<FormationData>& formations, const QString& filename);
-    bool exportCoachingPresentation(const QString& filename);
-    
-    // Data Exports
-    bool exportFormationTimeline(const QString& filename);
-    bool exportPlayerStatistics(const QString& filename);
-    bool exportCLSAnalysisReport(const QString& filename);
-    
-    // Empire Integration Exports
-    bool exportToAnalyzeMyTeam(const QString& filename);
-    bool exportToMELAI(const QString& filename);
-    
-    // Import Functions
-    bool importFormationLibrary(const QString& filename);
-    bool importCoachingTemplates(const QString& filename);
-
+  struct Requirements {
+    QString component;
+    QString requirement;
+    QString current_value;
+    bool satisfied;
+    QString recommendation;
+  };
+  
+  static QList<Requirements> CheckAllRequirements();
+  static bool CheckMinimumRequirements();
+  static QStringList GetRecommendations();
+  static QJsonObject GetSystemInfo();
+  
 private:
-    SportsIntegration* m_integration;
-    QString m_default_export_path;
-    
-    // Export Helpers
-    QString generateCoachingReportHTML(const std::vector<FormationData>& formations);
-    QImage renderTacticalDiagram(const FormationData& formation);
-    QString formatFormationTimeline(const std::vector<FormationData>& formations);
+  static Requirements CheckCPU();
+  static Requirements CheckMemory();
+  static Requirements CheckDiskSpace();
+  static Requirements CheckNetworkConnectivity();
+  static Requirements CheckVideoCodecs();
+  static Requirements CheckGPU();
+  static Requirements CheckDependencies();
 };
 
-// Global Integration Functions
-namespace integration {
-    /**
-     * @brief Initialize AMT Cleats sports integration with Olive
-     * @param olive_main_window Pointer to Olive's main window
-     * @return Pointer to SportsIntegration instance or nullptr on failure
-     */
-    SportsIntegration* initializeAMTCleats(QMainWindow* olive_main_window);
-    
-    /**
-     * @brief Shutdown sports integration and cleanup resources
-     * @param integration Pointer to SportsIntegration instance
-     */
-    void shutdownAMTCleats(SportsIntegration* integration);
-    
-    /**
-     * @brief Check if AMT Cleats sports features are available
-     * @return True if sports analysis is enabled and functional
-     */
-    bool isSportsAnalysisAvailable();
-    
-    /**
-     * @brief Get version information for AMT Cleats integration
-     * @return Version string with build information
-     */
-    QString getAMTCleatsVersion();
-}
+/**
+ * @brief Utility functions for sports integration
+ */
+namespace SportsIntegrationUtils {
 
-// Utility Macros for Integration
-#ifdef ENABLE_SPORTS_ANALYSIS
-    #define AMT_SPORTS_ENABLED true
-    #define AMT_INITIALIZE_SPORTS(main_window) amt::sports::integration::initializeAMTCleats(main_window)
-    #define AMT_SHUTDOWN_SPORTS(integration) amt::sports::integration::shutdownAMTCleats(integration)
-#else
-    #define AMT_SPORTS_ENABLED false
-    #define AMT_INITIALIZE_SPORTS(main_window) nullptr
-    #define AMT_SHUTDOWN_SPORTS(integration) do {} while(0)
-#endif
+/**
+ * @brief Format system performance metrics for display
+ */
+QString FormatPerformanceMetrics(const QJsonObject& metrics);
 
-} // namespace sports
-} // namespace amt
+/**
+ * @brief Calculate system performance score
+ */
+double CalculatePerformanceScore(const SystemHealth& health);
 
-#endif // SPORTS_INTEGRATION_H
+/**
+ * @brief Generate unique video session ID
+ */
+QString GenerateVideoSessionId();
+
+/**
+ * @brief Estimate processing time for video
+ */
+int EstimateProcessingTime(const VideoMetadata& metadata, AnalysisMode mode);
+
+/**
+ * @brief Validate video compatibility
+ */
+bool IsVideoCompatible(const QString& video_path);
+
+/**
+ * @brief Get optimal analysis settings
+ */
+QJsonObject GetOptimalAnalysisSettings(const VideoMetadata& metadata);
+
+/**
+ * @brief Create processing pipeline configuration
+ */
+QJsonObject CreatePipelineConfig(const QString& video_id, AnalysisMode mode);
+
+/**
+ * @brief Calculate resource requirements
+ */
+QJsonObject CalculateResourceRequirements(const QList<QString>& active_videos);
+
+} // namespace SportsIntegrationUtils
+
+} // namespace olive
+
+Q_DECLARE_METATYPE(olive::IntegrationState)
+Q_DECLARE_METATYPE(olive::AnalysisMode)
+Q_DECLARE_METATYPE(olive::ProcessingStage)
+Q_DECLARE_METATYPE(olive::SystemHealth)
+Q_DECLARE_METATYPE(olive::PipelineStatus)
+
+#endif // SPORTSINTEGRATION_H
